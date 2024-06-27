@@ -64,8 +64,6 @@ The dataset is located in the `dataset/` directory. It contains NYC Yellow Taxi 
 
 To train a model using traditional machine learning algorithms, import the `main.py` script with notebook:
 
-This script loads the dataset, preprocesses it, trains a regression model, and saves the trained model to the `train_model/` directory.
-
 #### Neural Networks
 
 To train a model using a neural network, import the `main_nn.py` script with notebook:

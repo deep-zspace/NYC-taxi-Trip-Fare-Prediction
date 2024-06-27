@@ -111,7 +111,7 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
     
     def evaluate_model(self):
         print("Evaluating the model...")
-        self.model.load_state_dict(torch.load('best_model.pth'))
+        self.model.load_state_dict(torch.load('train_model/best_model.pth'))
         self.model.eval()
         predictions = []
         actuals = []
