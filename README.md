@@ -62,21 +62,13 @@ The dataset is located in the `dataset/` directory. It contains NYC Yellow Taxi 
 
 #### Traditional Machine Learning Algorithms
 
-To train a model using traditional machine learning algorithms, run the `main.py` script:
-
-```bash
-python main.py
-```
+To train a model using traditional machine learning algorithms, import the `main.py` script with notebook:
 
 This script loads the dataset, preprocesses it, trains a regression model, and saves the trained model to the `train_model/` directory.
 
 #### Neural Networks
 
-To train a model using a neural network, run the `main_nn.py` script:
-
-```bash
-python main_nn.py
-```
+To train a model using a neural network, import the `main_nn.py` script with notebook:
 
 This script uses PyTorch to define and train a neural network model. The trained model is saved in the `train_model/` directory.
 
@@ -85,7 +77,7 @@ This script uses PyTorch to define and train a neural network model. The trained
 To predict taxi fare using a trained model, run the `predict_fare.py` script. This script prompts the user to input details such as the day of the week, hour of the day, trip duration, and trip distance. It then loads the selected model and outputs the predicted fare.
 
 ```bash
-python predict_fare.py
+python3 predict_fare.py
 ```
 
 When prompted, enter the model number (0-3) you wish to use. If no input is given, the script defaults to using `best_model_0.pth`.
