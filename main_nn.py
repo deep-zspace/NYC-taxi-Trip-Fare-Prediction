@@ -18,8 +18,10 @@ from tabulate import tabulate
 
 class TaxiFarePredictorNN(TaxiFarePredictor):
     def __init__(self, file_path, n_samples=100_000, batch_size=32, epochs=10, learning_rate=0.001, 
-                 weight_decay=1e-5, patience=3, factor=0.5, early_stopping=True, early_stopping_patience = 10):
+                 weight_decay=1e-5, patience=3, factor=0.5, early_stopping=True, early_stopping_patience=10,
+                 model_save_path='train_model/best_model.pth'):
         super().__init__(file_path, n_samples)
+        self.model_save_path = model_save_path
         self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
@@ -38,23 +40,26 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
 
     def load_and_preprocess_data(self):
         super().load_and_preprocess_data()
-        
+
         # Prepare DataLoader
         features = ['day', 'hour', 'trip_duration', 'trip_distance']
         X = self.df[features].values
         y = self.df['total_amount'].values
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
+
         # Convert to PyTorch tensors
         X_train = torch.tensor(X_train, dtype=torch.float32).to(self.device)
         X_test = torch.tensor(X_test, dtype=torch.float32).to(self.device)
         y_train = torch.tensor(y_train, dtype=torch.float32).to(self.device).view(-1, 1)
         y_test = torch.tensor(y_test, dtype=torch.float32).to(self.device).view(-1, 1)
-        
+
         # Create DataLoader
         self.train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
         self.test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=self.batch_size, shuffle=False)
         print("Data preprocessing completed successfully!")
+        
+        return X_train, y_train
+
     
     def train_model(self):
         print("Training the model...")
@@ -91,7 +96,7 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
                 if val_loss < self.best_loss:
                     self.best_loss = val_loss
                     self.early_stopping_counter = 0
-                    torch.save(self.model.state_dict(), 'best_model.pth')
+                    torch.save(self.model.state_dict(), self.model_save_path)
                     print(f"Epoch {epoch+1}/{self.epochs}: Validation loss improved to {val_loss:.4f}. Saving the best model.")
                 else:
                     self.early_stopping_counter += 1
@@ -107,11 +112,11 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
         progress_bar.close()
         print("Generating plots...")
         self.plot_loss(train_losses, val_losses)
-        print("Model training completed successfully! The best model has been saved as 'best_model.pth'")
+        print(f"Model training completed successfully! The best model has been saved as {self.model_save_path}")
     
     def evaluate_model(self):
         print("Evaluating the model...")
-        self.model.load_state_dict(torch.load('train_model/best_model.pth'))
+        self.model.load_state_dict(torch.load(self.model_save_path))
         self.model.eval()
         predictions = []
         actuals = []
@@ -182,14 +187,14 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
         plt.grid(True)
         plt.show()
 
-    def load_model(self, model_path='best_model.pth'):
+    def load_model(self):
         print("Loading model ...")
-        if not os.path.exists(model_path):
-            print(f"Model file {model_path} does not exist")
+        if not os.path.exists(self.model_save_path):
+            print(f"Model file {self.model_save_path} does not exist")
             return
-        self.model.load_state_dict(torch.load(model_path))
+        self.model.load_state_dict(torch.load(self.model_save_path))
         self.model.eval()
-        print(f"Model loaded successfully from {model_path}")
+        print(f"Model loaded successfully from {self.model_save_path}")
     
     def predict(self, day, hour, trip_duration, trip_distance):
         self.model.eval()
@@ -197,6 +202,31 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
         with torch.no_grad():
             prediction = self.model(input_features)
         return prediction.cpu().numpy()[0][0]
+
+
+    def calculate_residuals(self, X_train, y_train, batch_size=256):
+        self.model.eval()
+        all_predictions = []
+        all_targets = []
+        print("Calculating residuals...")
+
+        train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size, shuffle=False)
+
+        with torch.no_grad():
+            for inputs, targets in tqdm(train_loader, desc="Calculating residuals", unit="batch"):
+                inputs = inputs.to(self.device)  
+                targets = targets.to(self.device)  
+                outputs = self.model(inputs)  
+                all_predictions.append(outputs)
+                all_targets.append(targets)
+
+        predictions = torch.cat(all_predictions).flatten()
+        targets = torch.cat(all_targets).flatten()
+        residuals = targets - predictions
+        self.std_residuals = torch.std(residuals).item()
+        print(f"Residuals calculated. Standard deviation of residuals: {self.std_residuals:.4f}")
+
+
 
     def predict_fare_with_user_input(self):
         day = int(input("Enter day of the week (0-6, where 0=Sunday, 1=Monday, ..., 6=Saturday): "))
@@ -211,25 +241,12 @@ class TaxiFarePredictorNN(TaxiFarePredictor):
         predicted_fare = self.predict(day, hour, trip_duration, trip_distance)
         print(f"Predicted Fare: ${predicted_fare:.2f}")
 
-        # Calculate prediction accuracy metrics using the test data
-        actuals = []
-        predictions = []
-        self.model.eval()
-        with torch.no_grad():
-            for inputs, targets in self.test_loader:
-                outputs = self.model(inputs)
-                predictions.extend(outputs.cpu().numpy())
-                actuals.extend(targets.cpu().numpy())
+        if self.std_residuals is not None:
+            z_score = 1.96  # For 95% confidence
+            interval = z_score * self.std_residuals  # Prediction interval margin
 
-        predictions = np.array(predictions)
-        actuals = np.array(actuals)
-
-        mae = mean_absolute_error(actuals, predictions)
-        rmse = np.sqrt(mean_squared_error(actuals, predictions))
-        mape = mean_absolute_percentage_error(actuals, predictions) * 100 
-
-        print(f"Prediction Accuracy Metrics:")
-        print(f"Mean Absolute Error (MAE): {mae:.2f}")
-        print(f"Root Mean Squared Error (RMSE): {rmse:.2f}")
-        print(f"Mean Absolute Percentage Error (MAPE): {mape:.2f}%")
-
+            pred_lower = predicted_fare - interval
+            pred_upper = predicted_fare + interval
+            print(f"Prediction Interval: ${pred_lower:.2f} to ${pred_upper:.2f}")
+        else:
+            print("Prediction confidence interval cannot be calculated because residuals are not available.")
